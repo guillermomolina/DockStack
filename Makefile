@@ -1,4 +1,5 @@
-NAME=dockstack
+NAME=devstack
+DOCKER_REGISTRY=pro-font-app1-1.integracio.sys:8082
 
 .PHONY: all bash build clean lint run stop test
 
@@ -24,13 +25,21 @@ lint:
 		--volume "$(PWD)/Dockerfile:/Dockerfile:ro" \
 		redcoolbeans/dockerlint
 
+VERSION=test
+
 build:
 	docker build \
 		--tag $(NAME) \
 		--build-arg BUILD_DATE=`date --utc +"%Y-%m-%dT%H:%M:%SZ"` \
 		--build-arg VCS_REF=`git rev-parse --short HEAD` \
-		--build-arg VERSION="test" \
+		--build-arg VERSION="${VERSION}" \
 		.
+
+push:
+	docker tag $(NAME):latest $(DOCKER_REGISTRY)/base/$(NAME):latest
+	docker tag $(NAME):latest $(DOCKER_REGISTRY)/base/$(NAME):${VERSION}
+	docker login -u admin -p admin1234 ${DOCKER_REGISTRY}
+	docker push -a $(DOCKER_REGISTRY)/base/$(NAME)
 
 # Beware: This container runs in privileged mode!
 #  - https://github.com/moby/moby/issues/24387#issuecomment-249195810

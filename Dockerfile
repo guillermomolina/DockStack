@@ -1,4 +1,4 @@
-FROM ubuntu:16.04
+FROM ubuntu:20.04
 
 EXPOSE \
     # OpenStack Dashboard (Horizon)
@@ -19,6 +19,35 @@ EXPOSE \
 # Suppress unwanted debconf messages and questions during build
 ARG DEBIAN_FRONTEND=noninteractive
 
+####################
+# DevStack Preload #
+####################
+# Get Missing External System Dependencies for DevStack Setup
+RUN apt-get update && apt-get --assume-yes --no-install-recommends install \
+        systemctl \
+        # To Retrieve Fresh DevStack Sources
+        ca-certificates \
+        git \
+        # Host IP Management (ip)
+        iproute2 \
+        # Dependency of PyECLib
+        liberasurecode-dev \
+        # Dependency of python-nss
+        libnss3-dev \
+        # Dependency of systemd-python
+        libsystemd-dev \
+        # Enabling KVM Guests
+        libvirt-dev \
+        # Distribution Identification
+        lsb \
+        # Network Detection (arp)
+        net-tools \
+        # Preload Fixes from /devstack/tools/fixup_stuff.sh
+        python3-virtualenv 
+        #software-properties-common 
+    # Cleanup
+    #&& apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
 #####################################################################
 # Systemd workaround from solita/ubuntu-systemd and moby/moby#28614 #
 #####################################################################
@@ -38,57 +67,20 @@ RUN find /etc/systemd/system \
 # Workaround for console output error moby/moby#27202, based on moby/moby#9212
 CMD ["/bin/bash", "-c", "exec /sbin/init --log-target=journal 3>&1"]
 
-####################
-# DevStack Preload #
-####################
-# Get Missing External System Dependencies for DevStack Setup
-RUN apt-get update && apt-get --assume-yes --no-install-recommends install \
-        # To Retrieve Fresh DevStack Sources
-        ca-certificates \
-        git \
-        # Host IP Management (ip)
-        iproute2 \
-        # Dependency of PyECLib
-        liberasurecode-dev \
-        # Dependency of python-nss
-        libnss3-dev \
-        # Dependency of systemd-python
-        libsystemd-dev \
-        # Enabling KVM Guests
-        libvirt-dev \
-        # Distribution Identification
-        lsb \
-        # Network Detection (arp)
-        net-tools \
-        # Preload Fixes from /devstack/tools/fixup_stuff.sh
-        python-virtualenv \
-        software-properties-common \
-    # Cleanup
-    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
 ARG DEVSTACK_BRANCH="master"
 ARG PROJECTS_BRANCH="master"
 # This OpenStack project repositories will be downloaded
-ARG PROJECTS=" \
-        keystone \
-        nova \
-        neutron \
-        glance \
-        horizon \
-        zun \
-        zun-ui \
-        kuryr-libnetwork \
-    "
+ARG PROJECTS=""
 # Clone DevStack, Requirements and OpenStack (Core) Projects
 #  - To properly detect a container environment,
 #    we need at least openstack-dev/devstack/commit/63666a2
-RUN git clone git://git.openstack.org/openstack-dev/devstack --branch $DEVSTACK_BRANCH && \
-    git clone git://git.openstack.org/openstack/requirements --branch $DEVSTACK_BRANCH /opt/stack/requirements && \
+RUN git clone https://opendev.org/openstack/devstack --branch $DEVSTACK_BRANCH && \
+    git clone https://github.com/openstack/requirements --branch $DEVSTACK_BRANCH /opt/stack/requirements && \
     for \
         PROJECT in $PROJECTS; \
     do \
         git clone \
-            git://git.openstack.org/openstack/$PROJECT.git \
+            https://github.com/openstack/$PROJECT \
             /opt/stack/$PROJECT \
             --branch $PROJECTS_BRANCH \
             --depth 1 \
@@ -105,12 +97,12 @@ RUN /devstack/tools/install_prereqs.sh \
     && apt-get update && apt-get --assume-yes --no-install-recommends install \
         mysql-server \
         rabbitmq-server \
-    && service mysql start \
+    && service mysql start
     # Cleanup
-    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    #&& apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Install external pip, resolving missing python-setuptools and wheel errors
-RUN curl --silent --show-error https://bootstrap.pypa.io/get-pip.py | python
+#RUN curl --silent --show-error https://bootstrap.pypa.io/get-pip.py | python
 
 # Solve dependency conflict for urllib3 with pre-installed requests
 RUN pip install --upgrade --force-reinstall requests
@@ -123,12 +115,16 @@ RUN pip install \
         --requirement /opt/stack/requirements/test-requirements.txt
 
 # Setup non-Root user "stack", as required by stack.sh
-RUN useradd --shell /bin/bash --home-dir /opt/stack/ stack \
+RUN useradd -u 66641 --shell /bin/bash --home-dir /opt/stack/ stack \
     && echo "stack ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/stack \
     && sudo chown --recursive stack /devstack/
 
 # Copy DevStack configuration, if file has changed
 COPY local.conf /devstack/
+
+VOLUME /opt/stack
+WORKDIR /opt/stack
+USER stack
 
 # This container starts systemd, so do not add an additional Docker CMD!
 # Place any post-start calls in the Makefile.
@@ -141,11 +137,11 @@ ARG BUILD_DATE
 ARG VCS_REF
 ARG VERSION
 LABEL org.label-schema.build-date=$BUILD_DATE \
-        org.label-schema.name="DockStack" \
+        org.label-schema.name="DevStack" \
         org.label-schema.description="Docker on DevStack on Docker" \
         org.label-schema.version=$VERSION-$BUILD_DATE-git-$VCS_REF \
         org.label-schema.vendor="Jan Mattfeld" \
-        org.label-schema.vcs-url="https://github.com/janmattfeld/DockStack" \
+        org.label-schema.vcs-url="https://github.com/guillermomolina/devstack" \
         org.label-schema.vcs-ref=$VCS_REF \
         org.label-schema.docker.cmd="docker run --privileged --detach devstack " \
         org.label-schema.docker.params="DEVSTACK_BRANCH, PROJECTS_BRANCH, PROJECTS" \
