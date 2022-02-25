@@ -1,5 +1,5 @@
 NAME=devstack
-DOCKER_REGISTRY=pro-font-app1-1.integracio.sys:8082
+DOCKER_REGISTRY=hub.integracio.sys
 
 .PHONY: all bash build clean lint run stop test
 
